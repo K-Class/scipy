@@ -49,6 +49,7 @@ functions. Use ``pdist`` for this purpose.
    minkowski        -- the Minkowski distance.
    seuclidean       -- the normalized Euclidean distance.
    sqeuclidean      -- the squared Euclidean distance.
+   riemann          -- the riemann distance. 
 
 Distance functions between two boolean vectors (representing sets) ``u`` and
 ``v``.  As in the case of numerical vectors, ``pdist`` is more efficient for
@@ -101,7 +102,8 @@ __all__ = [
     'sokalsneath',
     'sqeuclidean',
     'squareform',
-    'yule'
+    'yule',
+   'riemann'
 ]
 
 
@@ -259,7 +261,18 @@ def _validate_minkowski_kwargs(X, m, n, **kwargs):
 
     return kwargs
 
+def _validate_riemann_kwargs(X, m, n, **kwargs):
+    """Validates keyword arguments for Riemannian distance calculation."""
 
+    # Riemannian geometry doesn't typically use weights, so remove validation:
+    # kwargs = _validate_weight_with_size(X, m, n, **kwargs)
+
+    if 'p' not in kwargs:
+        kwargs['p'] = 2.  # Default to Euclidean distance (p=2)
+    else:
+        if kwargs['p'] <= 0:
+            raise ValueError("p must be greater than 0")
+           
 def _validate_pdist_input(X, m, n, metric_info, **kwargs):
     # get supported types
     types = metric_info.types
@@ -460,6 +473,27 @@ def minkowski(u, v, p=2, w=None):
     1.0
 
     """
+    u = _validate_vector(u)
+    v = _validate_vector(v)
+    if p <= 0:
+        raise ValueError("p must be greater than 0")
+    u_v = u - v
+    if w is not None:
+        w = _validate_weights(w)
+        if p == 1:
+            root_w = w
+        elif p == 2:
+            # better precision and speed
+            root_w = np.sqrt(w)
+        elif p == np.inf:
+            root_w = (w != 0)
+        else:
+            root_w = np.power(w, 1/p)
+        u_v = root_w * u_v
+    dist = norm(u_v, ord=p)
+    return dist
+
+def riemann(u, v, p=2, w=None):
     u = _validate_vector(u)
     v = _validate_vector(v)
     if p <= 0:
@@ -1850,6 +1884,14 @@ _METRIC_INFOS = [
         cdist_func=_distance_pybind.cdist_yule,
         pdist_func=_distance_pybind.pdist_yule,
     ),
+    MetricInfo(
+        canonical_name='riemann',
+        aka={'riemann'},
+        types=['bool'],
+        dist_func=riemann,
+        cdist_func=_distance_pybind.cdist_riemann,
+        pdist_func=_distance_pybind.pdist_riemann,
+    ),       
 ]
 
 _METRICS = {info.canonical_name: info for info in _METRIC_INFOS}
